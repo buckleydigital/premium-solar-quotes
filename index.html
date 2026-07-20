@@ -202,7 +202,9 @@
         <div class="step" id="step5">
           <button class="backlink" onclick="goToStep(5,4)">← Back</button>
           <div class="q">Where should <span id="buyerName">your installer</span> send your quote?</div>
-          <div class="qs">SMS-verified so you only ever hear from your matched installer.</div>
+          <div class="qs">Shared only with your one matched installer.</div>
+          <!-- honeypot: hidden from humans; bots fill it and get silently dropped -->
+          <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0">
           <div class="grid2">
             <div class="fld"><label>First name</label><input id="firstName" oninput="validateContact()"><div class="err" id="err-firstName">Required</div></div>
             <div class="fld"><label>Last name</label><input id="lastName" oninput="validateContact()"><div class="err" id="err-lastName">Required</div></div>
@@ -213,22 +215,8 @@
             <input type="checkbox" id="consent" onchange="validateContact()">
             <label for="consent">I agree to be contacted by <strong id="consentBuyerName">my matched CEC-accredited installer</strong> about my solar enquiry. My details are shared only with that one installer. I've read the <a href="privacy-policy.html">Privacy Policy</a> &amp; <a href="terms.html">Terms</a>.</label>
           </div>
-          <button class="btn" id="submitBtn" disabled onclick="startVerify()">Send my code &amp; get quote →</button>
-        </div>
-
-        <!-- STEP 6: SMS VERIFY (Twilio Verify) -->
-        <div class="step" id="step6">
-          <button class="backlink" onclick="goToStep(6,5)">← Back</button>
-          <div class="q">Verify your mobile</div>
-          <div class="qs">We texted a 6-digit code to <strong id="verifyNumber"></strong>. Enter it to confirm your number.</div>
-          <div class="otp-row" id="otpRow">
-            <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
-            <input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric"><input maxlength="1" inputmode="numeric">
-          </div>
-          <div class="err" id="err-otp" style="text-align:center">That code didn't match — try again.</div>
-          <button class="btn" id="verifyBtn" onclick="checkVerify()">Confirm &amp; submit →</button>
-          <button class="resend" id="resendBtn" style="margin-top:12px" onclick="startVerify(true)">Resend code</button>
-          <div class="fineprint">Standard SMS rates may apply. We verify to keep your details safe.</div>
+          <button class="btn" id="submitBtn" disabled onclick="submitForm()">Get my free quote →</button>
+          <div class="fineprint">We check every number is a real Australian mobile before matching. No spam.</div>
         </div>
 
         <!-- SUCCESS -->
@@ -271,10 +259,10 @@ var BRAND_NAME        = 'Premium Solar Quotes';
 var NICHE             = 'solar';
 var SUBMIT_LEAD_URL     = SUPABASE_URL + '/functions/v1/submit-lead';
 var POSTCODE_LOOKUP_URL = SUPABASE_URL + '/functions/v1/postcode-lookup';
-var VERIFY_SMS_URL      = SUPABASE_URL + '/functions/v1/verify-sms';
 var TOTAL_STEPS = 5;
 var AUTH = { 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'apikey':SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
 var fd = { source:BRAND_NAME };
+var FORM_T0 = Date.now();   // anti-spam: time-to-complete guard
 document.getElementById('yr').textContent = new Date().getFullYear();
 
 /* ─── PROGRESS / NAV ─── */
@@ -356,68 +344,53 @@ function validateContact(){
 }
 function fv(id,test){ var el=document.getElementById(id),err=document.getElementById('err-'+id),ok=test(el.value.trim()); el.classList.toggle('err-field',!ok); if(err)err.style.display=ok?'none':'block'; return ok; }
 
-/* ─── STEP 6: TWILIO VERIFY ─── */
 function buildConsent(){
   return 'I agree to be contacted by '+(fd.matched_buyer||'a pre-vetted CEC-accredited installer')+
     ' about my solar enquiry. My details are shared only with that one installer.';
 }
-async function startVerify(isResend){
-  if(!isResend){
-    var ok=true;
-    ok=fv('firstName',v=>v.length>1)&&ok; ok=fv('lastName',v=>v.length>1)&&ok;
-    ok=fv('phone',v=>normAu(v)!==null)&&ok; ok=fv('email',v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))&&ok;
-    if(!ok||!document.getElementById('consent').checked) return;
-    fd.first_name=document.getElementById('firstName').value.trim();
-    fd.last_name=document.getElementById('lastName').value.trim();
-    fd.email=document.getElementById('email').value.trim();
-    fd.phone=normAu(document.getElementById('phone').value);
-  }
-  var btn=isResend?document.getElementById('resendBtn'):document.getElementById('submitBtn');
-  var label=btn.textContent; btn.textContent='Sending code…'; btn.disabled=true;
-  try{
-    var r=await fetch(VERIFY_SMS_URL,{method:'POST',headers:AUTH,body:JSON.stringify({action:'start',phone:fd.phone})});
-    var d=await r.json();
-    if(!r.ok||!d.success){ btn.textContent=label; btn.disabled=false; alert('Could not send code. Please check your number and try again.'); return; }
-    document.getElementById('verifyNumber').textContent=fd.phone;
-    if(!isResend) goToStep(5,6);
-    document.querySelectorAll('#otpRow input')[0].focus();
-  }catch(e){ alert('Network error sending code. Please try again.'); }
-  btn.textContent=label; btn.disabled=false;
-}
-function otpValue(){ return Array.from(document.querySelectorAll('#otpRow input')).map(i=>i.value).join(''); }
-async function checkVerify(){
-  var code=otpValue(), btn=document.getElementById('verifyBtn'), err=document.getElementById('err-otp');
-  if(!/^\d{6}$/.test(code)){ err.style.display='block'; err.textContent='Enter all 6 digits.'; return; }
-  err.style.display='none'; btn.textContent='Verifying…'; btn.disabled=true;
-  try{
-    var r=await fetch(VERIFY_SMS_URL,{method:'POST',headers:AUTH,body:JSON.stringify({action:'check',phone:fd.phone,code:code})});
-    var d=await r.json();
-    if(!d.approved){ err.style.display='block'; err.textContent='That code didn\'t match — try again.'; btn.textContent='Confirm & submit →'; btn.disabled=false; return; }
-    await submitLead();
-  }catch(e){ err.style.display='block'; err.textContent='Network error — please try again.'; btn.textContent='Confirm & submit →'; btn.disabled=false; }
-}
-/* OTP auto-advance */
-document.querySelectorAll('#otpRow input').forEach((inp,idx,arr)=>{
-  inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); if(inp.value&&idx<arr.length-1)arr[idx+1].focus(); });
-  inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value&&idx>0)arr[idx-1].focus(); });
-});
 
-/* ─── SUBMIT to LGR submit-lead ─── */
-async function submitLead(){
+/* ─── SUBMIT: real-number check + anti-spam happen server-side in submit-lead ─── */
+async function submitForm(){
+  var ok=true;
+  ok=fv('firstName',v=>v.length>1)&&ok; ok=fv('lastName',v=>v.length>1)&&ok;
+  ok=fv('phone',v=>normAu(v)!==null)&&ok; ok=fv('email',v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))&&ok;
+  if(!ok||!document.getElementById('consent').checked) return;
+
+  fd.first_name=document.getElementById('firstName').value.trim();
+  fd.last_name =document.getElementById('lastName').value.trim();
+  fd.email     =document.getElementById('email').value.trim();
+  fd.phone     =normAu(document.getElementById('phone').value);
+
   var payload={
     brand_domain:BRAND_DOMAIN, niche:NICHE, source:BRAND_NAME,
     first_name:fd.first_name, last_name:fd.last_name, name:fd.first_name+' '+fd.last_name,
     email:fd.email, phone:fd.phone, postcode:fd.postcode,
     is_homeowner:fd.is_homeowner, ownership_type:fd.ownership_type||null,
     avg_quarterly_bill:fd.avg_quarterly_bill||null, purchase_timeline:fd.purchase_timeline||null,
-    matched_buyer:fd.matched_buyer||null, phone_verified:true,
-    consent_text:buildConsent()
+    matched_buyer:fd.matched_buyer||null,
+    consent_text:buildConsent(),
+    website:document.getElementById('website').value,   // honeypot
+    elapsed_ms:Date.now()-FORM_T0                        // time-to-complete
   };
-  try{ await fetch(SUBMIT_LEAD_URL,{method:'POST',headers:AUTH,body:JSON.stringify(payload)}); }catch(e){ console.warn('submit-lead:',e); }
+
+  var btn=document.getElementById('submitBtn'), perr=document.getElementById('err-phone');
+  btn.textContent='Checking your number…'; btn.disabled=true;
+  try{
+    var r=await fetch(SUBMIT_LEAD_URL,{method:'POST',headers:AUTH,body:JSON.stringify(payload)});
+    var d=await r.json().catch(function(){return{};});
+    if(d && d.error==='invalid_phone_number'){
+      document.getElementById('phone').classList.add('err-field');
+      perr.textContent='That doesn\'t look like a real Australian mobile — please double-check it.';
+      perr.style.display='block';
+      btn.textContent='Get my free quote →'; btn.disabled=false;
+      return;
+    }
+    // any other outcome (matched, out-of-area, silently dropped) → show success
+  }catch(e){ console.warn('submit-lead:',e); }
   showSuccess();
 }
 function showSuccess(){
-  document.getElementById('step6').classList.remove('active');
+  document.getElementById('step5').classList.remove('active');
   document.querySelector('.survey-progress').style.display='none';
   updateProgress(TOTAL_STEPS+1);
   var el=document.getElementById('stepDone');
@@ -426,7 +399,7 @@ function showSuccess(){
     '<div class="em"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg></div>'+
     '<h3>You\'re matched — quote incoming!</h3>'+
     '<p>Expect a call or email from <strong>'+(fd.matched_buyer||'your matched installer')+'</strong> within one business day. No pressure — just a clear, honest quote.</p>'+
-    '<div class="badges"><span class="badge">CEC Accredited</span><span class="badge">Postcode Matched</span><span class="badge">SMS Verified</span><span class="badge">100% Free</span></div>'+
+    '<div class="badges"><span class="badge">CEC Accredited</span><span class="badge">Postcode Matched</span><span class="badge">Number Verified</span><span class="badge">100% Free</span></div>'+
     '</div>';
 }
 </script>
