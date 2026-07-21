@@ -323,26 +323,33 @@ async function submitPostcode(){
   btn.textContent='Checking your area…'; btn.disabled=true;
   chip.className='suburb-chip loading'; chip.style.display='inline-flex';
   document.getElementById('suburb-text').textContent='Checking installers near you…';
+  errEl.style.display='none'; pcEl.classList.remove('err-field');
   fd.postcode=pc;
   try{
     var r=await fetch(POSTCODE_LOOKUP_URL+'?postcode='+encodeURIComponent(pc)+'&niche='+encodeURIComponent(NICHE)+'&brand_domain='+encodeURIComponent(BRAND_DOMAIN),{headers:AUTH});
     var d=r.ok?await r.json():{};
-    fd.matched_buyer = d.buyer_name || null;
-    var displayName = d.buyer_name || 'a qualified, accredited installer';
-    document.getElementById('buyerName').textContent = d.buyer_name || 'your matched installer';
-    document.getElementById('consentBuyerName').textContent = displayName;
     if(d.buyer_name){
+      // matched: throw back the real installer's business name and continue
+      fd.matched_buyer=d.buyer_name;
+      document.getElementById('buyerName').textContent=d.buyer_name;
+      document.getElementById('consentBuyerName').textContent=d.buyer_name;
       chip.className='suburb-chip found';
-      document.getElementById('suburb-text').textContent='✓ Installer available in your area';
-    } else {
-      chip.className='suburb-chip loading';
-      document.getElementById('suburb-text').textContent='✓ We\'ll match you with a local installer';
+      document.getElementById('suburb-text').textContent='✓ '+d.buyer_name+' covers your area';
+      setTimeout(()=>goToStep(4,5),450);
+      return;   // stays disabled while advancing
     }
-    setTimeout(()=>goToStep(4,5),400);
-  }catch(e){
+    // no installer covers this postcode: hard stop, do NOT continue to the form
     fd.matched_buyer=null;
-    document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
-    setTimeout(()=>goToStep(4,5),260);
+    chip.className='suburb-chip no-coverage';
+    document.getElementById('suburb-text').textContent='No installer covers this postcode yet';
+    pcEl.classList.add('err-field');
+    errEl.textContent="We don't have an installer covering that postcode yet. Try a neighbouring one.";
+    errEl.style.display='block';
+  }catch(e){
+    chip.className='suburb-chip no-coverage';
+    document.getElementById('suburb-text').textContent='Couldn\'t check your area';
+    errEl.textContent='Something went wrong checking your area. Please try again.';
+    errEl.style.display='block';
   }
   btn.textContent='Find my local installer →'; btn.disabled=false;
 }
