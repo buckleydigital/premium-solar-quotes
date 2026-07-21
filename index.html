@@ -381,11 +381,19 @@ src="https://www.facebook.com/tr?id=1645419089889035&ev=PageView&noscript=1"
 
 <footer>
   <div class="wrap">
-    <div class="fnav">
-      <a href="/brisbane/">Brisbane</a>
+    <div class="fnav areas">
       <a href="/sydney/">Sydney</a>
       <a href="/melbourne/">Melbourne</a>
+      <a href="/brisbane/">Brisbane</a>
+      <a href="/perth/">Perth</a>
+      <a href="/adelaide/">Adelaide</a>
       <a href="/gold-coast/">Gold Coast</a>
+      <a href="/canberra/">Canberra</a>
+      <a href="/newcastle/">Newcastle</a>
+      <a href="/sunshine-coast/">Sunshine Coast</a>
+      <a href="/central-coast/">Central Coast</a>
+      <a href="/wollongong/">Wollongong</a>
+      <a href="/geelong/">Geelong</a>
     </div>
     <div class="fnav">
       <a href="privacy-policy.html">Privacy Policy</a>
@@ -468,18 +476,23 @@ async function submitPostcode(){
       setTimeout(()=>goToStep(4,5),450);
       return;   // stays disabled while advancing
     }
-    // no installer covers this postcode: hard stop, do NOT continue to the form
+    // no installer covers this postcode YET: don't stop them — take the details
+    // anyway. Consent stays generic (names nobody), so the server holds the lead
+    // as pending and only delivers if/when a local installer covers the area.
     fd.matched_buyer=null;
-    chip.className='suburb-chip no-coverage';
-    document.getElementById('suburb-text').textContent='No installer covers this postcode yet';
-    pcEl.classList.add('err-field');
-    errEl.textContent="We don't have an installer covering that postcode yet. Try a neighbouring one.";
-    errEl.style.display='block';
+    document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
+    chip.className='suburb-chip found';
+    document.getElementById('suburb-text').textContent='✓ Got it — we\'ll match you as soon as an installer covers your area';
+    setTimeout(()=>goToStep(4,5),450);
+    return;
   }catch(e){
-    chip.className='suburb-chip no-coverage';
-    document.getElementById('suburb-text').textContent='Couldn\'t check your area';
-    errEl.textContent='Something went wrong checking your area. Please try again.';
-    errEl.style.display='block';
+    // lookup failed — still let them through; the server makes the final call.
+    fd.matched_buyer=null;
+    document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
+    chip.className='suburb-chip found';
+    document.getElementById('suburb-text').textContent='✓ Got it — checking installer coverage for your area';
+    setTimeout(()=>goToStep(4,5),450);
+    return;
   }
   btn.textContent='Find my local installer →'; btn.disabled=false;
 }
