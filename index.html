@@ -440,6 +440,20 @@ async function submitForm(){
     }
     // any other outcome (matched, out-of-area, silently dropped) → show success
   }catch(e){ console.warn('submit-lead:',e); }
+  // guaranteed raw capture (cws-style): direct insert so the lead is never lost
+  // even if routing hiccups. Fire-and-forget; only reached once past the blocks.
+  fetch(SUPABASE_URL+'/rest/v1/lead_submissions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+SUPABASE_ANON_KEY,'Prefer':'return=minimal'},
+    body:JSON.stringify({
+      brand_domain:BRAND_DOMAIN, niche:NICHE, source:BRAND_NAME,
+      first_name:fd.first_name, last_name:fd.last_name, name:fd.first_name+' '+fd.last_name,
+      email:fd.email, phone:fd.phone, postcode:fd.postcode,
+      is_homeowner:fd.is_homeowner, ownership_type:fd.ownership_type||null,
+      purchase_timeline:fd.purchase_timeline||null, avg_quarterly_bill:fd.avg_quarterly_bill||null,
+      matched_buyer:fd.matched_buyer||null, consent_text:buildConsent()
+    })
+  }).catch(function(e){ console.warn('capture:',e); });
   showSuccess();
 }
 function showSuccess(){
