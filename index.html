@@ -216,6 +216,7 @@
             <label for="consent">I agree to be contacted by <strong id="consentBuyerName">my matched CEC-accredited installer</strong> about my solar enquiry. My details are shared only with that one installer. I've read the <a href="privacy-policy.html">Privacy Policy</a> &amp; <a href="terms.html">Terms</a>.</label>
           </div>
           <button class="btn" id="submitBtn" disabled onclick="submitForm()">Get my free quote →</button>
+          <div class="err" id="err-form" style="text-align:center;margin-top:10px"></div>
           <div class="fineprint">We check every number is a real Australian mobile before matching. No spam.</div>
         </div>
 
@@ -349,6 +350,24 @@ function buildConsent(){
     ' about my solar enquiry. My details are shared only with that one installer.';
 }
 
+/* ─── persistent visitor identity (server does the enforcement) ─── */
+function visitorId(){
+  try{
+    var k='lgr_vid', v=localStorage.getItem(k);
+    if(!v){ v=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2)); localStorage.setItem(k,v); }
+    return v;
+  }catch(e){ return null; }
+}
+function deviceHash(){
+  try{
+    var parts=[navigator.userAgent,navigator.language,(screen.width+'x'+screen.height+'x'+screen.colorDepth),
+      new Date().getTimezoneOffset(),(navigator.hardwareConcurrency||''),(navigator.platform||''),(navigator.deviceMemory||'')];
+    try{ var c=document.createElement('canvas'),x=c.getContext('2d'); x.textBaseline='top'; x.font='14px Arial'; x.fillStyle='#069'; x.fillText('lgr-fp-7',2,2); parts.push(c.toDataURL()); }catch(e){}
+    var s=parts.join('|'),h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))>>>0; }
+    return 'd'+h.toString(16);
+  }catch(e){ return null; }
+}
+
 /* ─── SUBMIT: real-number check + anti-spam happen server-side in submit-lead ─── */
 async function submitForm(){
   var ok=true;
@@ -370,14 +389,25 @@ async function submitForm(){
     matched_buyer:fd.matched_buyer||null,
     consent_text:buildConsent(),
     website:document.getElementById('website').value,   // honeypot
-    elapsed_ms:Date.now()-FORM_T0                        // time-to-complete
+    elapsed_ms:Date.now()-FORM_T0,                       // time-to-complete
+    fingerprint:visitorId(),                             // persistent visitor id
+    device_hash:deviceHash()                             // device signals
   };
 
-  var btn=document.getElementById('submitBtn'), perr=document.getElementById('err-phone');
+  var btn=document.getElementById('submitBtn'),
+      perr=document.getElementById('err-phone'),
+      ferr=document.getElementById('err-form');
+  ferr.style.display='none';
   btn.textContent='Checking your number…'; btn.disabled=true;
   try{
     var r=await fetch(SUBMIT_LEAD_URL,{method:'POST',headers:AUTH,body:JSON.stringify(payload)});
     var d=await r.json().catch(function(){return{};});
+    if(r.status===429 || (d && d.error==='too_many_requests')){
+      ferr.textContent='You\'ve recently submitted a request. Please try again later.';
+      ferr.style.display='block';
+      btn.textContent='Get my free quote →'; btn.disabled=false;
+      return;
+    }
     if(d && d.error==='invalid_phone_number'){
       document.getElementById('phone').classList.add('err-field');
       perr.textContent='That doesn\'t look like a real Australian mobile — please double-check it.';
