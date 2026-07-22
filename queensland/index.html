@@ -476,21 +476,21 @@ async function submitPostcode(){
       setTimeout(()=>goToStep(4,5),450);
       return;   // stays disabled while advancing
     }
-    // no installer covers this postcode YET: don't stop them — take the details
+    // no installer covers this postcode YET: don't stop them - take the details
     // anyway. Consent stays generic (names nobody), so the server holds the lead
     // as pending and only delivers if/when a local installer covers the area.
     fd.matched_buyer=null;
     document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
     chip.className='suburb-chip found';
-    document.getElementById('suburb-text').textContent='✓ Got it — we\'ll match you as soon as an installer covers your area';
+    document.getElementById('suburb-text').textContent='✓ Got it - we\'ll match you as soon as an installer covers your area';
     setTimeout(()=>goToStep(4,5),450);
     return;
   }catch(e){
-    // lookup failed — still let them through; the server makes the final call.
+    // lookup failed - still let them through; the server makes the final call.
     fd.matched_buyer=null;
     document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
     chip.className='suburb-chip found';
-    document.getElementById('suburb-text').textContent='✓ Got it — checking installer coverage for your area';
+    document.getElementById('suburb-text').textContent='✓ Got it - checking installer coverage for your area';
     setTimeout(()=>goToStep(4,5),450);
     return;
   }
