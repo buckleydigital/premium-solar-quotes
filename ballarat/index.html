@@ -598,6 +598,20 @@ var POSTCODE_LOOKUP_URL = SUPABASE_URL + '/functions/v1/postcode-lookup';
 var TOTAL_STEPS = 5;
 var AUTH = { 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'apikey':SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
 var fd = { source:BRAND_NAME };
+/* @ga-events */
+/* GA4 funnel events. Safe no-op when gtag is blocked or absent. */
+var STEP_NAMES = {1:'ownership',2:'quarterly_bill',3:'timeline',4:'postcode',5:'contact'};
+var _seenStep = {};
+function track(name, params){
+  try{ if(typeof gtag==='function') gtag('event', name, params||{}); }catch(e){}
+}
+function trackStep(n){
+  if(_seenStep[n]) return;            /* forward progress only, not back-nav */
+  _seenStep[n] = 1;
+  track('form_step', { step_number:n, step_name:STEP_NAMES[n]||('step'+n) });
+}
+/* @end-ga-events */
+
 var FORM_T0 = Date.now();   // anti-spam: time-to-complete guard
 document.getElementById('yr').textContent = new Date().getFullYear();
 
@@ -609,6 +623,7 @@ function updateProgress(step){
   if(pc) pc.textContent = step>TOTAL_STEPS ? 'Almost done' : 'Step '+step+' of '+TOTAL_STEPS;
 }
 function goToStep(from,to){
+  if(to>from) trackStep(to);
   document.getElementById('step'+from).classList.remove('active');
   document.getElementById('step'+to).classList.add('active');
   updateProgress(to);
@@ -621,7 +636,8 @@ function pickOwner(owns,type,el){
   document.querySelectorAll('#step1-inner .choice-card').forEach(c=>c.classList.remove('selected'));
   el.classList.add('selected');
   fd.is_homeowner = owns; fd.ownership_type = type;
-  if(!owns){ setTimeout(()=>{document.getElementById('step1-inner').style.display='none';document.getElementById('renter-msg').style.display='block';},280); return; }
+  track('form_start', { step_name:'ownership' });
+  if(!owns){ track('form_blocked', { reason:'renter' }); setTimeout(()=>{document.getElementById('step1-inner').style.display='none';document.getElementById('renter-msg').style.display='block';},280); return; }
   setTimeout(()=>goToStep(1,2),280);
 }
 /* ─── STEP 2/3 ─── */
@@ -654,6 +670,7 @@ async function submitPostcode(){
       document.getElementById('consentBuyerName').textContent=d.buyer_name;
       chip.className='suburb-chip found';
       document.getElementById('suburb-text').textContent='✓ '+d.buyer_name+' covers your area';
+      track('postcode_result', { result:'matched', matched:true });
       setTimeout(()=>goToStep(4,5),450);
       return;   // stays disabled while advancing
     }
@@ -664,6 +681,7 @@ async function submitPostcode(){
     document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
     chip.className='suburb-chip found';
     document.getElementById('suburb-text').textContent='✓ Got it - we\'ll match you as soon as an installer covers your area';
+    track('postcode_result', { result:'pending_coverage', matched:false });
     setTimeout(()=>goToStep(4,5),450);
     return;
   }catch(e){
@@ -672,6 +690,7 @@ async function submitPostcode(){
     document.getElementById('consentBuyerName').textContent='a qualified, accredited installer';
     chip.className='suburb-chip found';
     document.getElementById('suburb-text').textContent='✓ Got it - checking installer coverage for your area';
+    track('postcode_result', { result:'lookup_failed', matched:false });
     setTimeout(()=>goToStep(4,5),450);
     return;
   }
@@ -751,6 +770,7 @@ async function submitForm(){
     var d=await r.json().catch(function(){return{};});
     if(r.status===429 || (d && d.error==='too_many_requests')){
       ferr.textContent='You\'ve recently submitted a request. Please try again later.';
+      track('form_error', { reason:'rate_limited' });
       ferr.style.display='block';
       btn.textContent='Get my free quote →'; btn.disabled=false;
       return;
@@ -758,6 +778,7 @@ async function submitForm(){
     if(d && d.error==='invalid_phone_number'){
       document.getElementById('phone').classList.add('err-field');
       perr.textContent='That doesn\'t look like a real Australian mobile. Please double-check it.';
+      track('form_error', { reason:'invalid_phone' });
       perr.style.display='block';
       btn.textContent='Get my free quote →'; btn.disabled=false;
       return;
@@ -778,6 +799,7 @@ async function submitForm(){
       matched_buyer:fd.matched_buyer||null, consent_text:buildConsent()
     })
   }).catch(function(e){ console.warn('capture:',e); });
+  track('generate_lead', { matched: !!fd.matched_buyer });
   showSuccess();
 }
 function showSuccess(){
