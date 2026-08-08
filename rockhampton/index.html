@@ -790,6 +790,7 @@ async function submitForm(){
       ferr=document.getElementById('err-form');
   ferr.style.display='none';
   btn.textContent='Checking your number…'; btn.disabled=true;
+  var dropped=false;   // set when the server silently drops this as spam
   try{
     var r=await fetch(SUBMIT_LEAD_URL,{method:'POST',headers:AUTH,body:JSON.stringify(payload)});
     var d=await r.json().catch(function(){return{};});
@@ -808,10 +809,20 @@ async function submitForm(){
       btn.textContent='Get my free quote →'; btn.disabled=false;
       return;
     }
-    // any other outcome (matched, out-of-area, silently dropped) → show success
+    // Silent drop - honeypot filled, submitted too fast, or a disposable email.
+    // The server returns a fake 200 so the bot learns nothing it can adapt to,
+    // and stored:false is the only tell. Show the identical success screen, but
+    // skip the raw capture and the GA conversion below: spam must never reach
+    // lead_submissions, which is meant to be the trustworthy backup of real
+    // submissions. Strict ===false - a matched lead carries no `stored` field.
+    if(d && d.stored===false) dropped=true;
+    // any other outcome (matched, out-of-area) → show success
   }catch(e){ console.warn('submit-lead:',e); }
-  // guaranteed raw capture (cws-style): direct insert so the lead is never lost
-  // even if routing hiccups. Fire-and-forget; only reached once past the blocks.
+  // Guaranteed raw capture (cws-style): direct insert so a genuine lead is never
+  // lost even if routing hiccups. Fire-and-forget. Skipped entirely for spam the
+  // server already dropped - and skipped on a network error too, since `dropped`
+  // stays false there, preserving the safety net for real submissions.
+  if(!dropped){
   fetch(SUPABASE_URL+'/rest/v1/lead_submissions',{
     method:'POST',
     headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+SUPABASE_ANON_KEY,'Prefer':'return=minimal'},
@@ -825,6 +836,7 @@ async function submitForm(){
     })
   }).catch(function(e){ console.warn('capture:',e); });
   track('generate_lead', { matched: !!fd.matched_buyer });
+  }
   showSuccess();
 }
 function showSuccess(){
